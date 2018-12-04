@@ -14,7 +14,7 @@ from chainerrl.recurrent import Recurrent
 from chainerrl.recurrent import state_reset
 from chainerrl.replay_buffer import batch_experiences
 from chainerrl.replay_buffer import ReplayUpdater
-
+from chainerrl.recurrent import state_kept
 
 
 def compute_value_loss(y, t, clip_delta=True, batch_accumulator='mean'):
@@ -76,7 +76,7 @@ def compute_weighted_value_loss(y, t, weights,
     return loss
 
 
-class DQN(agent.AttributeSavingMixin, agent.BatchAgent):
+class DoubleDQN(agent.AttributeSavingMixin, agent.BatchAgent):
     """Deep Q-Network algorithm.
 
     Args:
@@ -127,11 +127,17 @@ class DQN(agent.AttributeSavingMixin, agent.BatchAgent):
                  batch_states=batch_states,
                  optimizer_f='',
                  loop=1,
-                 std=100):
+                 std=100,
+                 record={'qt+i_r':[],
+                         'target':[],
+                         'target_losses':[],
+                         'loss':[],
+                         'reward':[]}):
         self.f_pred = f_pred
         self.optimizer_f = optimizer_f
         self.std = std
         self.loop = loop
+        self.record = record
 
         self.model = q_function
         self.q_function = q_function  # For backward compatibility
@@ -301,13 +307,19 @@ class DQN(agent.AttributeSavingMixin, agent.BatchAgent):
     def _compute_target_values(self, exp_batch, gamma):
         batch_next_state = exp_batch['next_state']
 
-        target_next_qout = self.target_model(batch_next_state)
-        next_q_max = target_next_qout.max
+        with chainer.using_config('train', False), state_kept(self.q_function):
+            next_qout = self.q_function(batch_next_state)
+
+        target_next_qout = self.target_q_function(batch_next_state)
+
+        next_q_max = target_next_qout.evaluate_actions(
+            next_qout.greedy_actions)
 
         batch_rewards = exp_batch['reward']
         batch_terminal = exp_batch['is_state_terminal']
 
         return batch_rewards + self.gamma * (1.0 - batch_terminal) * next_q_max
+
 
     def _compute_y_and_t(self, exp_batch, gamma):
         batch_size = exp_batch['reward'].shape[0]
@@ -321,26 +333,30 @@ class DQN(agent.AttributeSavingMixin, agent.BatchAgent):
         batch_q = F.reshape(qout.evaluate_actions(
             batch_actions), (batch_size, 1))
 
-
         # 内部報酬を追加，ついでに学習
         ## バッチ内の次状態の予測モデルをつくる
         state_action = np.array([list(s)+list(a) for s,a in zip(exp_batch['state'],
             [np.eye(2)[int(a)] for a in exp_batch['action']])],dtype=np.float32)
-        for _ in range(self.loop):
+        for i in range(self.loop):
             y = self.f_pred(state_action)
             t = exp_batch['next_state']
-            losses = F.sum((y-t)*(y-t),axis=1).reshape(32,1)
-            loss = F.mean_absolute_error(losses, np.full_like(losses, 0.).astype(np.float32))
-        # print(loss)
+            if i == 0:
+                losses = F.sum((y-t)*(y-t),axis=1).reshape(32,1).array
+            losses_itr = F.sum((y-t)*(y-t),axis=1).reshape(32,1)
+            loss = F.mean_absolute_error(losses_itr, np.full_like(losses_itr, 0.).astype(np.float32))
+            self.f_pred.cleargrads()
+            loss.backward()
+            self.optimizer_f.update()
+            self.record['loss'].append(loss)
 
-        self.f_pred.cleargrads()
-        loss.backward()
-        self.optimizer_f.update()
+        self.record['target_losses'].append(losses)
+        self.record['target'].append(t.T[2])
         with chainer.no_backprop_mode():
             batch_q_target = F.reshape(
                 self._compute_target_values(exp_batch, gamma),
                 (batch_size, 1))
-        return batch_q, batch_q_target + (losses.array/self.std) # TODO:分散の補正は後でする
+            self.record['qt+i_r'].append(batch_q_target + (losses/self.std))
+        return batch_q, batch_q_target + (losses/self.std) # TODO:分散の補正は後でする
 
     def _compute_loss(self, exp_batch, gamma, errors_out=None):
         """Compute the Q-learning loss for a batch of experiences
@@ -406,7 +422,7 @@ class DQN(agent.AttributeSavingMixin, agent.BatchAgent):
         if self.t % self.target_update_interval == 0:
             self.sync_target_network()
 
-        if self.last_state is not None:
+        elif self.last_state is not None:
             assert self.last_action is not None
             # Add a transition to the replay buffer
             self.replay_buffer.append(

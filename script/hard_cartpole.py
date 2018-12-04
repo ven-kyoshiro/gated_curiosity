@@ -23,8 +23,8 @@ class CartPoleEnv(gym.Env):
         1	Cart Velocity             -Inf            Inf
         2	Pole Angle                 -pi            +pi
         3	Pole Velocity At Tip      -Inf            Inf
-        4	Whisper                   Pole Angle is less than π±7°then randomly 0 ~ 1, else 0.
-        
+        4       Whisper                   Pole Angle is less than π±7°then randomly 0 ~ 1, else 0.
+
     Actions:
         Type: Discrete(2)
         Num	Action
@@ -109,6 +109,8 @@ class CartPoleEnv(gym.Env):
             or theta < -math.pi + self.theta_threshold_radians:
             whisper = self.np_random.uniform(low=0.0, high=1.0, size=(1,))[0]
             # TODO: no noisy mode
+            whisper = 0.0
+        else:
             whisper = 0.0
         self.state = (x,x_dot,theta,theta_dot,whisper)
         done =  x < -self.x_threshold \
