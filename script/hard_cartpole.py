@@ -106,7 +106,7 @@ class CartPoleEnv(gym.Env):
             theta = theta + self.tau * theta_dot
         theta = self.adj_theta(theta)
         if theta > math.pi - self.theta_threshold_radians\
-            or theta < -math.pi + self.theta_threshold_radians:
+            and theta < math.pi + self.theta_threshold_radians:
             whisper = self.np_random.uniform(low=0.0, high=1.0, size=(1,))[0]
             # TODO: no noisy mode
             whisper = 0.0
@@ -118,8 +118,8 @@ class CartPoleEnv(gym.Env):
         done = bool(done)
         
 
-        if theta > -self.theta_threshold_radians \
-               and theta < self.theta_threshold_radians:
+        if theta < self.theta_threshold_radians \
+               or theta > 2 * math.pi - self.theta_threshold_radians:
             reward = 1.0
         else:
             reward = 0.0
@@ -140,10 +140,10 @@ class CartPoleEnv(gym.Env):
         return np.array(self.state), reward, done, {}
     
     def adj_theta(self,th):
-        if th >= math.pi:
-            return -math.pi + (th - math.pi)
-        elif th < -math.pi:
-            return math.pi + (th + math.pi)
+        if th >= 2*math.pi:
+            return th-2*math.pi 
+        elif th < 0.:
+            return th+2*math.pi 
         else:
             return th
 
