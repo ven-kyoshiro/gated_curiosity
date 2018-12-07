@@ -48,7 +48,8 @@ class CartPoleEnv(gym.Env):
         'video.frames_per_second' : 50
     }
 
-    def __init__(self):
+    def __init__(self, use_noise=False):
+        self.use_noise = use_noise
         self.gravity = 9.8
         self.masscart = 1.0
         self.masspole = 0.1
@@ -107,9 +108,10 @@ class CartPoleEnv(gym.Env):
         theta = self.adj_theta(theta)
         if theta > math.pi - self.theta_threshold_radians\
             and theta < math.pi + self.theta_threshold_radians:
-            whisper = self.np_random.uniform(low=0.0, high=1.0, size=(1,))[0]
-            # TODO: no noisy mode
-            whisper = 0.0
+            whisper = self.np_random.uniform(low=0.0, high=10.0, size=(1,))[0]
+            if not self.use_noise:
+                # TODO: no noisy mode
+                whisper = 0.0
         else:
             whisper = 0.0
         self.state = (x,x_dot,theta,theta_dot,whisper)

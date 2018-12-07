@@ -1,2 +1,4 @@
 script/notify.py
+script/logs
+*.pyc
 *.pickle
