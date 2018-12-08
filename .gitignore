@@ -2,3 +2,4 @@ script/notify.py
 script/logs
 *.pyc
 *.pickle
+script/.ipynb_checkpoints

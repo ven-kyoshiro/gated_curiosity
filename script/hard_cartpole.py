@@ -9,6 +9,7 @@ import gym
 from gym import spaces, logger
 from gym.utils import seeding
 import numpy as np
+import copy
 
 class CartPoleEnv(gym.Env):
     """
@@ -78,8 +79,16 @@ class CartPoleEnv(gym.Env):
         self.seed()
         self.viewer = None
         self.state = None
+        self.whisper = 0.0 
 
         self.steps_beyond_done = None
+
+    def norm_filter(self,np_state):
+        state = copy.deepcopy(np_state)
+        state = state + np.array([0.0,0.0,-np.pi,0.0,0.0])
+        state = state / np.array([4.8,6.0,np.pi,8.0,1.0])
+        return state 
+
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -108,12 +117,13 @@ class CartPoleEnv(gym.Env):
         theta = self.adj_theta(theta)
         if theta > math.pi - self.theta_threshold_radians\
             and theta < math.pi + self.theta_threshold_radians:
-            whisper = self.np_random.uniform(low=0.0, high=10.0, size=(1,))[0]
+            whisper = np.random.choice([-1.,1.]) 
             if not self.use_noise:
                 # TODO: no noisy mode
                 whisper = 0.0
         else:
             whisper = 0.0
+        self.whisper = whisper 
         self.state = (x,x_dot,theta,theta_dot,whisper)
         done =  x < -self.x_threshold \
                 or x > self.x_threshold
@@ -139,7 +149,7 @@ class CartPoleEnv(gym.Env):
             self.steps_beyond_done += 1
             # reward = 0.0
 
-        return np.array(self.state), reward, done, {}
+        return self.norm_filter(np.array(self.state)), reward, done, {}
     
     def adj_theta(self,th):
         if th >= 2*math.pi:
@@ -157,7 +167,7 @@ class CartPoleEnv(gym.Env):
         
         
         self.steps_beyond_done = None
-        return np.array(self.state)
+        return self.norm_filter(np.array(self.state))
 
     def render(self, mode='human'):
         screen_width = 600
