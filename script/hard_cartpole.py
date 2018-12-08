@@ -86,7 +86,7 @@ class CartPoleEnv(gym.Env):
     def norm_filter(self,np_state):
         state = copy.deepcopy(np_state)
         state = state + np.array([0.0,0.0,-np.pi,0.0,0.0])
-        state = state / np.array([4.8,6.0,np.pi,8.0,1.0])
+        state = state / np.array([4.8,6.0,1.0,8.0,1.0])
         return state 
 
 
@@ -212,6 +212,7 @@ class CartPoleEnv(gym.Env):
 
         # Edit the pole polygon vertex
         pole = self._pole_geom
+        pole.set_color(0.5+(self.whisper*0.7), 0.5+(0.7-self.whisper*0.7), 0.)
         l,r,t,b = -polewidth/2,polewidth/2,polelen-polewidth/2,-polewidth/2
         pole.v = [(l,b), (l,t), (r,t), (r,b)]
 

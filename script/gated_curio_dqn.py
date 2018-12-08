@@ -131,10 +131,12 @@ class DoubleDQN(agent.AttributeSavingMixin, agent.BatchAgent):
                  loop=1,
                  std=100,
                  delta=0.1,
+                 threshold=10.0,
                  record={'qt+i_r':[],
                          'target':[],
                          'target_losses':[],
                          'target_a_losses':[],
+                         'gated_losses':[],
                          'loss':[],
                          'loss_a':[],
                          'reward':[]}):
@@ -353,7 +355,7 @@ class DoubleDQN(agent.AttributeSavingMixin, agent.BatchAgent):
                 losses = F.sum((y-t)*(y-t),axis=1).reshape(32,1).array
                 losses_a = F.sum((y_a-state_action)*(\
                                   y_a-state_action),axis=1).reshape(32,1).array
-                filt = ((losses_a>self.delta)*losses_a).reshape(32,1)
+                filt = (losses_a>self.delta).reshape(32,1)
             losses_a_itr = F.sum((y_a-state_action)*(\
                                   y_a-state_action),axis=1).reshape(32,1).array
             losses_itr = F.sum((y-t)*(y-t),axis=1).reshape(32,1)
@@ -371,6 +373,7 @@ class DoubleDQN(agent.AttributeSavingMixin, agent.BatchAgent):
 
         self.record['target_losses'].append(losses)
         self.record['target_a_losses'].append(losses_a)
+        self.record['gated_losses'].append(filt*losses)
         self.record['target'].append(t.T[2])
         with chainer.no_backprop_mode():
             batch_q_target = F.reshape(
