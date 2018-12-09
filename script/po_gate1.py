@@ -1,13 +1,14 @@
 from hard_cartpole import CartPoleEnv
-from curio_dqn import DoubleDQN
+from gated_curio_dqn_noa import DoubleDQN
 from chainerrl.recurrent import state_kept
 import chainer
 import chainer.functions as F
 import chainer.links as L
 import chainerrl
 import numpy as np
-import pickle 
+import pickle
 from notify import notify
+import traceback
 
 class QFunction(chainer.Chain):
 
@@ -16,8 +17,7 @@ class QFunction(chainer.Chain):
         with self.init_scope():
             self.l0 = L.Linear(obs_size, n_hidden_channels)
             self.l1 = L.Linear(n_hidden_channels, n_hidden_channels)
-            self.l2 = L.Linear(n_hidden_channels, n_actions)
-
+            self.l2 = L.Linear(n_hidden_channels, n_actions) 
     def __call__(self, x, test=False):
         """
         Args:
@@ -53,11 +53,35 @@ class ForwardPredictor(chainer.Chain):
         h = F.relu(self.bn3(self.l2(h)))
         return self.l3(h)
 
+'''
+class AutoPredictor(chainer.Chain):
+    
+    def __init__(self, obs_size, n_actions, n_hidden_channels=128):
+        super().__init__()
+        with self.init_scope():
+            self.l0 = L.Linear(obs_size+n_actions, n_hidden_channels)
+            self.l1 = L.Linear(n_hidden_channels, n_hidden_channels)
+            self.l2 = L.Linear(n_hidden_channels, n_hidden_channels)
+            self.l3 = L.Linear(n_hidden_channels, obs_size+n_actions)
+            self.bn1 = L.BatchNormalization(n_hidden_channels)
+            self.bn2 = L.BatchNormalization(n_hidden_channels)
+            self.bn3 = L.BatchNormalization(n_hidden_channels)
 
+    def __call__(self, x, test=False):
+        """
+        Args:
+            x (ndarray or chainer.Variable): An observation
+            test (bool): a flag indicating whether it is in test mode
+        """
+        h = F.relu(self.bn1(self.l0(x)))
+        h = F.relu(self.bn2(self.l1(h)))
+        h = F.relu(self.bn3(self.l2(h)))
+        return self.l3(h)
+'''
 
 
 def main():
-    env = CartPoleEnv()
+    env = CartPoleEnv(use_noise=True)
     env.reset()
 
     obs_size = env.observation_space.shape[0]
@@ -69,11 +93,15 @@ def main():
     obs_size, n_actions,
     n_hidden_layers=2, n_hidden_channels=50)
     f_pred = ForwardPredictor(obs_size,n_actions)
+    a_pred = ForwardPredictor(obs_size,n_actions)
+    # a_pred = AutoPredictor(obs_size,n_actions)
 
     optimizer = chainer.optimizers.Adam(eps=1e-2)
     optimizer.setup(q_func)
     optimizer_f = chainer.optimizers.Adam(eps=1e-7)
     optimizer_f.setup(f_pred)
+    optimizer_a = chainer.optimizers.Adam(eps=1e-7)
+    optimizer_a.setup(a_pred)
     # Set the discount factor that discounts future rewards.
     gamma = 0.95
 
@@ -96,11 +124,14 @@ def main():
         replay_start_size=500, update_interval=1,
         target_update_interval=100, phi=phi,
         f_pred=f_pred,
+        a_pred=a_pred,
         optimizer_f=optimizer_f,
-        std=100,
-        loop=20)
+        optimizer_a=optimizer_a,
+        std=10,
+        loop=1,
+        delta=0.05)
 
-    n_episodes = 2000
+    n_episodes = 1250
     max_episode_len = 200
     record=[]
     for i in range(1, n_episodes + 1):
@@ -117,11 +148,14 @@ def main():
             R += reward
             t += 1
         agent.record['reward'].append(R)
-        with open('test_rec05_std'+str(agent.std)+'_loop'+str(agent.loop)+'.pickle',mode='wb') as f:
-            pickle.dump(agent.record,f)
-        if i % 100 == 0:
-            notify('test5\n : episode:'+str(i)+' R:'+str(R))
+        if i % 100 == 0 or i == n_episodes-1:
+            with open('po_logs/po_gate1_'+str(i)+'_std'+str(agent.std)+'_delta'+str(agent.delta)+'.pickle',mode='wb') as f:
+                pickle.dump(agent.record,f)
+            notify('po_gate1\n : episode:'+str(i)+' R:'+str(R))
+            for k in agent.record.keys():
+                agent.record[k] = []
         agent.stop_episode_and_train(obs, reward, done)
+    agent.save('po_logs/po_gate1')
     print('Finished.')
 
 
@@ -129,4 +163,8 @@ if __name__ == '__main__':
     try:
         main()
     except Exception as e:
+        print(e)
+        print(traceback.format_exc())
         notify('!!!! Error !!!!\n'+str(e)+'\n')
+        notify(str(traceback.format_exc())+'\n')
+

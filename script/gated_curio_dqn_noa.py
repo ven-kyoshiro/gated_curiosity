@@ -124,19 +124,28 @@ class DoubleDQN(agent.AttributeSavingMixin, agent.BatchAgent):
                  episodic_update_len=None,
                  logger=getLogger(__name__),
                  f_pred = lambda x:x,
+                 a_pred = lambda x:x,
                  batch_states=batch_states,
                  optimizer_f='',
+                 optimizer_a='',
                  loop=1,
                  std=100,
+                 delta=0.1,
                  record={'qt+i_r':[],
                          'target':[],
                          'target_losses':[],
+                         'target_a_losses':[],
+                         'gated_losses':[],
                          'loss':[],
+                         'loss_a':[],
                          'reward':[]}):
         self.f_pred = f_pred
+        self.a_pred = a_pred
         self.optimizer_f = optimizer_f
+        self.optimizer_a = optimizer_a
         self.std = std
         self.loop = loop
+        self.delta = delta 
         self.record = record
 
         self.model = q_function
@@ -146,6 +155,7 @@ class DoubleDQN(agent.AttributeSavingMixin, agent.BatchAgent):
             cuda.get_device(gpu).use()
             self.model.to_gpu(device=gpu)
             self.f_pred.to_gpu(device=gpu)
+            self.a_pred.to_gpu(device=gpu)
 
         self.xp = self.model.xp
         self.replay_buffer = replay_buffer
@@ -335,28 +345,41 @@ class DoubleDQN(agent.AttributeSavingMixin, agent.BatchAgent):
 
         # 内部報酬を追加，ついでに学習
         ## バッチ内の次状態の予測モデルをつくる
-        state_action = np.array([list(s)+list(a) for s,a in zip(exp_batch['state'],
+        state_action = np.array([list(s)+list(a) for s,a in zip(batch_state,
             [np.eye(2)[int(a)] for a in exp_batch['action']])],dtype=np.float32)
         for i in range(self.loop):
             y = self.f_pred(state_action)
+            y_a = self.a_pred(state_action)
             t = exp_batch['next_state']
+            u = exp_batch['state']
             if i == 0:
                 losses = F.sum((y-t)*(y-t),axis=1).reshape(32,1).array
+                losses_a = F.sum((y_a-u)*(y_a-u),axis=1).reshape(32,1).array
+                filt = (losses_a>self.delta).reshape(32,1).astype(np.float32)
+            losses_a_itr = F.sum((y_a-u)*(y_a-u),axis=1).reshape(32,1)
             losses_itr = F.sum((y-t)*(y-t),axis=1).reshape(32,1)
             loss = F.mean_absolute_error(losses_itr, np.full_like(losses_itr, 0.).astype(np.float32))
+            loss_a = F.mean_absolute_error(losses_a_itr, np.full_like(losses_a_itr, 0.).astype(np.float32))
+
             self.f_pred.cleargrads()
+            self.a_pred.cleargrads()
             loss.backward()
+            loss_a.backward()
             self.optimizer_f.update()
+            self.optimizer_a.update()
             self.record['loss'].append(loss)
+            self.record['loss_a'].append(loss_a)
 
         self.record['target_losses'].append(losses)
+        self.record['target_a_losses'].append(losses_a)
+        self.record['gated_losses'].append(filt*losses)
         self.record['target'].append(t.T[2])
         with chainer.no_backprop_mode():
             batch_q_target = F.reshape(
                 self._compute_target_values(exp_batch, gamma),
                 (batch_size, 1))
-            self.record['qt+i_r'].append(batch_q_target + (losses/self.std))
-        return batch_q, batch_q_target + (losses/self.std) # TODO:分散の補正は後でする
+            self.record['qt+i_r'].append(batch_q_target + (filt*losses/self.std))
+        return batch_q, batch_q_target + (filt*losses/self.std) # TODO:分散の補正は後でする
 
     def _compute_loss(self, exp_batch, gamma, errors_out=None):
         """Compute the Q-learning loss for a batch of experiences

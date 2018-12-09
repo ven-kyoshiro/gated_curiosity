@@ -1,5 +1,5 @@
 from hard_cartpole import CartPoleEnv
-from gated_curio_dqn import DoubleDQN
+from gated_curio_dqn_noa_forward import DoubleDQN
 from chainerrl.recurrent import state_kept
 import chainer
 import chainer.functions as F
@@ -17,8 +17,7 @@ class QFunction(chainer.Chain):
         with self.init_scope():
             self.l0 = L.Linear(obs_size, n_hidden_channels)
             self.l1 = L.Linear(n_hidden_channels, n_hidden_channels)
-            self.l2 = L.Linear(n_hidden_channels, n_actions)
-
+            self.l2 = L.Linear(n_hidden_channels, n_actions) 
     def __call__(self, x, test=False):
         """
         Args:
@@ -54,7 +53,7 @@ class ForwardPredictor(chainer.Chain):
         h = F.relu(self.bn3(self.l2(h)))
         return self.l3(h)
 
-
+'''
 class AutoPredictor(chainer.Chain):
     
     def __init__(self, obs_size, n_actions, n_hidden_channels=128):
@@ -78,7 +77,7 @@ class AutoPredictor(chainer.Chain):
         h = F.relu(self.bn2(self.l1(h)))
         h = F.relu(self.bn3(self.l2(h)))
         return self.l3(h)
-
+'''
 
 
 def main():
@@ -94,7 +93,8 @@ def main():
     obs_size, n_actions,
     n_hidden_layers=2, n_hidden_channels=50)
     f_pred = ForwardPredictor(obs_size,n_actions)
-    a_pred = AutoPredictor(obs_size,n_actions)
+    a_pred = ForwardPredictor(obs_size,n_actions)
+    # a_pred = AutoPredictor(obs_size,n_actions)
 
     optimizer = chainer.optimizers.Adam(eps=1e-2)
     optimizer.setup(q_func)
@@ -129,9 +129,9 @@ def main():
         optimizer_a=optimizer_a,
         std=10,
         loop=1,
-        delta=0.15)
+        delta=0.05)
 
-    n_episodes = 2000
+    n_episodes = 1250
     max_episode_len = 200
     record=[]
     for i in range(1, n_episodes + 1):
@@ -148,13 +148,14 @@ def main():
             R += reward
             t += 1
         agent.record['reward'].append(R)
-        if i % 100 == 0:
-            with open('logs/gate_rec02_'+str(i)+'_std'+str(agent.std)+'_loop'+str(agent.loop)+'.pickle',mode='wb') as f:
+        if i % 100 == 0 or i == n_episodes-1:
+            with open('po_logs/po_forward2_'+str(i)+'_std'+str(agent.std)+'.pickle',mode='wb') as f:
                 pickle.dump(agent.record,f)
-            notify('gate01\n : episode:'+str(i)+' R:'+str(R))
+            notify('po_forward2\n : episode:'+str(i)+' R:'+str(R))
             for k in agent.record.keys():
                 agent.record[k] = []
         agent.stop_episode_and_train(obs, reward, done)
+    agent.save('po_logs/po_forward2')
     print('Finished.')
 
 
