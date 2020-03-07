@@ -5,3 +5,8 @@ script/logs
 script/.ipynb_checkpoints
 po_logs
 old_testcode
+*.sh
+animes/
+gpu_logs/
+po_logs_easy/
+tmp
